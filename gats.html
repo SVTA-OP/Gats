@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gats.io Clone - P2P Multiplayer</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        /* Modern Reset & Base Styles */
+        * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: #222; overflow: hidden; color: white; }
+        #game-container { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background-color: #2b2b2b; }
+        canvas { display: block; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        
+        .hud-element { position: absolute; background: rgba(0, 0, 0, 0.5); padding: 10px 20px; border-radius: 4px; pointer-events: none; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; }
+        #ammo-display { bottom: 20px; right: 20px; font-size: 24px; color: #fff; }
+        #health-bar-container { bottom: 20px; left: 50%; transform: translateX(-50%); width: 300px; height: 10px; background: #444; border-radius: 5px; overflow: hidden; position: absolute; }
+        #health-fill { height: 100%; width: 100%; background: #2ecc71; transition: width 0.1s; }
+        #dash-bar-container { bottom: 35px; left: 50%; transform: translateX(-50%); width: 200px; height: 4px; background: #444; border-radius: 2px; overflow: hidden; position: absolute; display: none; }
+        #dash-fill { height: 100%; width: 100%; background: #3498db; }
+        #ability-icon { position: absolute; bottom: 50px; left: 50%; transform: translateX(-50%); width: 40px; height: 40px; background: rgba(0,0,0,0.6); border-radius: 4px; display: none; align-items: center; justify-content: center; font-weight: bold; font-size: 14px; }
+        #reload-msg { position: absolute; top: 60%; left: 50%; transform: translate(-50%, -50%); color: #f1c40f; font-size: 14px; font-weight: bold; display: none; }
+        #score-display { top: 20px; left: 20px; font-size: 20px; color: white; }
+        #connection-status { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.7); padding: 5px 15px; border-radius: 20px; font-size: 12px; color: #aaa; display: none; }
+
+        .menu-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto; z-index: 10; }
+        .hidden { display: none !important; }
+        h1 { font-size: 3rem; margin-bottom: 15px; color: white; text-shadow: 0 0 10px rgba(255, 255, 255, 0.5); }
+        .panel { background: #333; padding: 20px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; max-width: 700px; width: 95%; max-height: 90vh; overflow-y: auto; }
+        .input-group { margin-bottom: 15px; text-align: left; }
+        label { display: block; margin-bottom: 5px; color: #aaa; font-size: 12px; font-weight: bold; text-transform: uppercase; }
+        input[type="text"] { width: 100%; padding: 8px; background: #444; border: 1px solid #555; color: white; border-radius: 4px; font-size: 16px; }
+        .selection-grid { display: flex; gap: 8px; margin-bottom: 15px; justify-content: center; flex-wrap: wrap; }
+        .select-btn { background: #444; border: 2px solid #555; color: #ddd; padding: 8px 12px; cursor: pointer; border-radius: 4px; transition: all 0.2s; min-width: 70px; font-size: 14px; }
+        .select-btn:hover { background: #555; }
+        .select-btn.active { border-color: #3498db; background: #2c3e50; color: white; }
+        .color-btn { width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+        .color-btn.active { border-color: white; transform: scale(1.1); }
+        .play-btn { background: #27ae60; color: white; border: none; padding: 12px 30px; font-size: 18px; border-radius: 4px; cursor: pointer; font-weight: bold; transition: background 0.2s; width: 100%; margin-top: 5px; }
+        .play-btn:hover { background: #2ecc71; }
+        .play-btn.secondary { background: #2980b9; margin-top: 10px; }
+        .play-btn.secondary:hover { background: #3498db; }
+
+        #level-up-screen { position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); background: rgba(20, 20, 20, 0.95); padding: 15px 25px; border-radius: 12px; box-shadow: 0 0 30px rgba(0,0,0,0.8); border: 2px solid #444; text-align: center; pointer-events: auto; z-index: 100; display: flex; flex-direction: column; align-items: center; }
+        #level-up-screen h1 { font-size: 18px; margin: 0 0 10px 0; color: #f1c40f; text-transform: uppercase; }
+        #perk-cards-container { display: flex; gap: 10px; justify-content: center; }
+        .perk-card { background: #333; padding: 12px; width: 110px; border-radius: 6px; cursor: pointer; border: 2px solid #444; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80px; }
+        .perk-card:hover { background: #444; border-color: #3498db; transform: translateY(-5px); }
+        .perk-title { font-size: 13px; font-weight: bold; color: #fff; margin-bottom: 5px; }
+        .perk-desc { font-size: 10px; color: #aaa; line-height: 1.2; }
+
+        #leaderboard { position: absolute; top: 20px; right: 20px; background: rgba(0,0,0,0.5); padding: 10px; border-radius: 4px; text-align: right; pointer-events: none; min-width: 150px; }
+        .lb-entry { font-size: 14px; margin-bottom: 2px; }
+        #lobby-ui { margin-top: 20px; padding-top: 20px; border-top: 1px solid #555; }
+        .copy-box { background: #222; padding: 10px; border: 1px dashed #666; margin: 10px 0; user-select: text; font-family: monospace; font-size: 18px; color: #f1c40f; cursor: pointer;}
+        .copy-box:active { background: #333; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <div id="ui-layer">
+        <div id="leaderboard"></div>
+        <div id="score-display" class="hud-element">Score: 0</div>
+        <div id="reload-msg">RELOADING...</div>
+        <div id="connection-status">Connecting...</div>
+        <div id="ability-icon">E</div>
+        <div id="dash-bar-container"><div id="dash-fill"></div></div>
+        <div id="health-bar-container" class="hud-element"><div id="health-fill"></div></div>
+        <div id="ammo-display" class="hud-element">20 / 20</div>
+    </div>
+
+    <div id="start-screen" class="menu-screen">
+        <h1>GATS.CLONE</h1>
+        <div class="panel">
+            <div class="input-group"><label>Nickname</label><input type="text" id="nickname" placeholder="Enter name" value="Player"></div>
+            <div class="input-group"><label>Weapon</label><div class="selection-grid" id="weapon-select"></div></div>
+            <div class="input-group"><label>Armor</label><div class="selection-grid" id="armor-select"></div></div>
+            <div class="input-group"><label>Color</label>
+                <div class="selection-grid" id="color-select">
+                    <div class="color-btn active" style="background: #e74c3c" data-color="#e74c3c"></div>
+                    <div class="color-btn" style="background: #3498db" data-color="#3498db"></div>
+                    <div class="color-btn" style="background: #9b59b6" data-color="#9b59b6"></div>
+                    <div class="color-btn" style="background: #f1c40f" data-color="#f1c40f"></div>
+                    <div class="color-btn" style="background: #2ecc71" data-color="#2ecc71"></div>
+                    <div class="color-btn" style="background: #ffffff" data-color="#ffffff"></div>
+                </div>
+            </div>
+            <button class="play-btn" id="btn-single">SINGLE PLAYER</button>
+            <div id="lobby-ui">
+                <button class="play-btn secondary" id="btn-host">HOST GAME</button>
+                <div id="host-info" style="display:none">
+                    <p style="margin-bottom:5px;">Share this Game ID (Copied to Clipboard!):</p>
+                    <div class="copy-box" id="host-id-display">Generating...</div>
+                    <p style="font-size:14px; color:#f39c12; margin-top:10px; font-weight:bold;">Waiting for player to join...</p>
+                </div>
+                <div id="join-section">
+                    <div style="margin: 10px 0; font-size: 14px; color:#888">- OR -</div>
+                    <input type="text" id="join-id-input" placeholder="Enter Game ID here">
+                    <button class="play-btn secondary" id="btn-join">JOIN GAME</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="level-up-screen" class="hidden"><h1>LEVEL UP</h1><div id="perk-cards-container"></div></div>
+    <div id="death-screen" class="menu-screen hidden">
+        <h1>YOU DIED</h1>
+        <div class="panel">
+            <p style="margin-bottom: 20px; font-size: 18px;">Killed by <span id="killer-name" style="color: #e74c3c; font-weight: bold;">Bot</span></p>
+            <p style="margin-bottom: 30px;">Final Score: <span id="final-score">0</span></p>
+            <div class="input-group"><label>Weapon</label><div class="selection-grid" id="respawn-weapon-select"></div></div>
+            <div class="input-group"><label>Armor</label><div class="selection-grid" id="respawn-armor-select"></div></div>
+            <button class="play-btn" id="respawn-btn">RESPAWN</button>
+        </div>
+    </div>
+
+    <script>
+        const CANVAS = document.getElementById('gameCanvas');
+        const CTX = CANVAS.getContext('2d');
+        const TILE_SIZE = 50; 
+        const WORLD_WIDTH = 2500;
+        const WORLD_HEIGHT = 2500;
+        
+        const WEAPONS = {
+            pistol: { name: 'Pistol', range: 500, damage: 15, fireRate: 400, spread: 0.02, recoil: 0.05, kick: 0.2, weight: 0, ammo: 12, reload: 1200, auto: false, length: 25, width: 8 },
+            smg:    { name: 'SMG',    range: 400, damage: 9,  fireRate: 90, spread: 0.10, recoil: 0.03, kick: 0.05, weight: 5, ammo: 30, reload: 1800, auto: true, length: 20, width: 6 },
+            shotgun:{ name: 'Shotgun',range: 350, damage: 8,  fireRate: 900, spread: 0.20, recoil: 0.25, kick: 1.5, weight: 10, ammo: 5,  reload: 2200, auto: false, length: 35, width: 10, count: 6 },
+            assault:{ name: 'Assault',range: 650, damage: 13, fireRate: 140, spread: 0.04, recoil: 0.04, kick: 0.15, weight: 10, ammo: 30, reload: 2000, auto: true, length: 40, width: 8 },
+            sniper: { name: 'Sniper', range: 1100,damage: 65, fireRate: 1400,spread: 0.0,  recoil: 0.40, kick: 2.0, weight: 20, ammo: 5,  reload: 2800, auto: false, length: 65, width: 6 },
+            lmg:    { name: 'LMG',    range: 650, damage: 11, fireRate: 110, spread: 0.12, recoil: 0.04, kick: 0.1, weight: 30, ammo: 60, reload: 3500, auto: true, length: 45, width: 12 }
+        };
+
+        const ARMOR = {
+            none:   { name: 'No Armor', weight: 0, bonusHp: 0 },
+            light:  { name: 'Light',    weight: 15, bonusHp: 30 },
+            medium: { name: 'Medium',   weight: 30, bonusHp: 60 },
+            heavy:  { name: 'Heavy',    weight: 50, bonusHp: 90 }
+        };
+
+        const PERKS_LIST = {
+            speed:  { name: 'Speed', desc: '+Movement Speed' },
+            kevlar: { name: 'Kevlar', desc: '-50% Incoming Damage' },
+            dash:   { name: 'Dash', desc: 'Space to Dash' },
+            camo:   { name: 'Camo', desc: 'Invisible when still' },
+            knife:  { name: 'Knife', desc: 'Press E to Throw Knife' }
+        };
+
+        let gameState = {
+            running: false,
+            mode: 'single', 
+            paused: false,
+            lastTime: 0,
+            camera: { x: 0, y: 0 },
+            cameraLocked: false,
+            mouse: { x: 0, y: 0, down: false },
+            keys: { w: false, a: false, s: false, d: false, r: false, space: false, e: false },
+            player: null, 
+            playerId: null, 
+            entities: [],
+            bullets: [],
+            particles: [],
+            projectiles: [],
+            obstacles: [],
+            decorations: [], 
+            score: 0,
+            perkThresholds: [100, 300, 600],
+            nextThresholdIndex: 0
+        };
+
+        let peer = null;
+        let conn = null;
+        let netPlayers = {}; 
+
+        class Vector {
+            constructor(x, y) { this.x = x; this.y = y; }
+            add(v) { return new Vector(this.x + v.x, this.y + v.y); }
+            sub(v) { return new Vector(this.x - v.x, this.y - v.y); }
+            mult(n) { return new Vector(this.x * n, this.y * n); }
+            mag() { return Math.sqrt(this.x * this.x + this.y * this.y); }
+            normalize() {
+                let m = this.mag();
+                return m === 0 ? new Vector(0,0) : new Vector(this.x / m, this.y / m);
+            }
+        }
+
+        class Entity {
+            constructor(x, y, radius, color) {
+                this.pos = new Vector(x, y); this.vel = new Vector(0, 0); this.accel = new Vector(0, 0);
+                this.radius = radius; this.color = color; this.angle = 0; this.dead = false;
+                this.maxHealth = 100; this.health = 100; this.regenTimer = 0; this.score = 0;
+            }
+            update(dt) {
+                if (this.health < this.maxHealth && this.health > 0) {
+                    this.regenTimer += dt;
+                    if (this.regenTimer > 4000) { this.health = Math.min(this.maxHealth, this.health + (8 * dt / 1000)); }
+                }
+            }
+            takeDamage(amount, source) {
+                this.regenTimer = 0; this.health -= amount;
+                if (source && !source.dead) { source.score += amount; if (source === gameState.player && gameState.mode !== 'client') gameState.score = source.score; }
+                if (this.health <= 0) { this.health = 0; this.die(source); }
+                for(let i=0; i<3; i++) gameState.particles.push(new Particle(this.pos.x, this.pos.y, '#fff', 3));
+            }
+            die(killer) {
+                this.dead = true;
+                this.killer = killer ? killer.id : null;
+                if (killer && !killer.dead) { killer.score += 100; if (killer === gameState.player && gameState.mode !== 'client') gameState.score = killer.score; }
+                for(let i=0; i<12; i++) gameState.particles.push(new Particle(this.pos.x, this.pos.y, this.color, 10));
+            }
+            resolvePhysics(dt) {
+                this.pos.x = Math.max(this.radius, Math.min(WORLD_WIDTH-this.radius, this.pos.x));
+                this.pos.y = Math.max(this.radius, Math.min(WORLD_HEIGHT-this.radius, this.pos.y));
+                gameState.obstacles.forEach(obs => {
+                    let closestX = Math.max(obs.x, Math.min(this.pos.x, obs.x + obs.w));
+                    let closestY = Math.max(obs.y, Math.min(this.pos.y, obs.y + obs.h));
+                    let dx = this.pos.x - closestX; let dy = this.pos.y - closestY; let distSq = dx*dx + dy*dy;
+                    if (distSq < (this.radius * this.radius)) {
+                        let dist = Math.sqrt(distSq); let overlap = this.radius - dist;
+                        if (dist > 0) {
+                            let nx = dx / dist; let ny = dy / dist;
+                            this.pos.x += nx * overlap; this.pos.y += ny * overlap;
+                            this.vel.x *= 0.9; this.vel.y *= 0.9;
+                        }
+                    }
+                });
+            }
+        }
+
+        class Character extends Entity {
+            constructor(name, x, y, weaponKey, armorKey, color, isBot = false, id = null) {
+                super(x, y, 22, color);
+                this.id = id || Math.random().toString(36).substr(2, 9);
+                this.name = name; this.weaponKey = weaponKey; this.weapon = WEAPONS[weaponKey]; this.armorKey = armorKey;
+                this.armor = ARMOR[armorKey]; this.perks = []; 
+                this.maxHealth = 100 + this.armor.bonusHp; this.health = this.maxHealth; this.currentAmmo = this.weapon.ammo;
+                this.isReloading = false; this.reloadTimer = 0; this.shootTimer = 0; this.isBot = isBot;
+                
+                let baseSpeed = 0.65;
+                let totalWeight = this.weapon.weight + this.armor.weight;
+                let speedFactor = Math.max(0.5, 1.0 - (totalWeight / 150)); 
+                this.maxSpeedBase = baseSpeed * speedFactor;
+                this.acceleration = 0.025; this.recoilSpread = 0; this.dashCooldown = 0; this.knifeCooldown = 0; this.graceTimer = 5000;
+
+                this.moveInput = new Vector(0,0); this.wantShoot = false; this.lastWantShoot = false; this.wantReload = false; this.wantDash = false; this.wantKnife = false;
+                this.target = null; this.changeDirTimer = 0; this.reactionTimer = 0;
+            }
+            hasPerk(name) { return this.perks.includes(name); }
+            getMaxSpeed() { let s = this.maxSpeedBase; if (this.hasPerk('speed')) s *= 1.2; return s; }
+            takeDamage(amount, source) {
+                if (this.graceTimer > 0) return;
+                if (this.hasPerk('kevlar')) amount *= 0.5;
+                super.takeDamage(amount, source);
+            }
+            die(killer) {
+                super.die(killer);
+                if (this === gameState.player) {
+                    // Set default respawn selections to current loadout
+                    respawnWeapon = this.weaponKey || 'pistol';
+                    respawnArmor = this.armorKey || 'none';
+                    
+                    setTimeout(() => {
+                        document.getElementById('death-screen').classList.remove('hidden');
+                        document.getElementById('killer-name').innerText = killer ? killer.name : "Environment";
+                        document.getElementById('final-score').innerText = Math.floor(gameState.score);
+                        
+                        // Set active states for respawn selectors
+                        document.querySelectorAll('#respawn-weapon-select .select-btn').forEach(b => {
+                            b.classList.remove('active');
+                            if (b.dataset.key === respawnWeapon) b.classList.add('active');
+                        });
+                        document.querySelectorAll('#respawn-armor-select .select-btn').forEach(b => {
+                            b.classList.remove('active');
+                            if (b.dataset.key === respawnArmor) b.classList.add('active');
+                        });
+                    }, 1000);
+                }
+            }
+            update(dt) {
+                super.update(dt);
+                if (this.graceTimer > 0) this.graceTimer -= dt;
+                this.recoilSpread = Math.max(0, this.recoilSpread - (0.0008 * dt));
+                if (this.isReloading) { this.reloadTimer -= dt; if (this.reloadTimer <= 0) { this.isReloading = false; this.currentAmmo = this.weapon.ammo; } }
+                if (this.shootTimer > 0) this.shootTimer -= dt;
+                if (this.dashCooldown > 0) this.dashCooldown -= dt;
+                if (this.knifeCooldown > 0) this.knifeCooldown -= dt;
+                
+                if (this.wantDash) { this.performDash(); this.wantDash = false; }
+                if (this.wantKnife) { this.throwKnife(); this.wantKnife = false; }
+                if (this.wantReload) { this.reload(); this.wantReload = false; }
+                
+                // Handle shooting for network players (auto vs semi-auto)
+                if (this.wantShoot) {
+                    if (this.weapon.auto) {
+                        // Auto weapon: shoot continuously while wantShoot is true
+                        this.shoot(0, 0); // Parameters not used, shoots in this.angle direction
+                    } else {
+                        // Semi-auto: only shoot once per trigger pull
+                        if (!this.lastWantShoot) {
+                            this.shoot(0, 0);
+                        }
+                    }
+                }
+                this.lastWantShoot = this.wantShoot;
+                
+                this.applyPhysics(dt);
+            }
+            applyPhysics(dt) {
+                if (this.moveInput.mag() > 0) this.vel = this.vel.add(this.moveInput.mult(this.acceleration * dt));
+                let friction = this.moveInput.mag() > 0 ? 0.92 : 0.82;
+                this.vel = this.vel.mult(friction);
+                let limit = this.getMaxSpeed() * dt;
+                if (this.isReloading || this.shootTimer > 0) limit *= 0.7;
+                if (this.vel.mag() > limit && this.dashCooldown < 2500) this.vel = this.vel.normalize().mult(limit);
+                this.pos = this.pos.add(this.vel);
+                this.resolvePhysics(dt);
+            }
+            performDash() {
+                if (!this.hasPerk('dash') || this.dashCooldown > 0) return;
+                let dashDir = this.moveInput.mag() > 0 ? this.moveInput.normalize() : new Vector(Math.cos(this.angle), Math.sin(this.angle));
+                this.vel = this.vel.add(dashDir.mult(25)); this.dashCooldown = 3000;
+                for(let i=0; i<10; i++) gameState.particles.push(new Particle(this.pos.x, this.pos.y, '#3498db', 5));
+            }
+            throwKnife() {
+                if (!this.hasPerk('knife') || this.knifeCooldown > 0) return;
+                let dir = new Vector(Math.cos(this.angle), Math.sin(this.angle));
+                gameState.projectiles.push(new KnifeProjectile(this.pos.x + dir.x * 30, this.pos.y + dir.y * 30, dir, this));
+                this.knifeCooldown = 2000;
+            }
+            shoot(targetX, targetY) {
+                if (this.isReloading || this.shootTimer > 0) return;
+                if (this.currentAmmo <= 0) { this.reload(); return; }
+                this.currentAmmo--; this.shootTimer = this.weapon.fireRate;
+                this.recoilSpread += this.weapon.recoil; if (this.recoilSpread > 0.5) this.recoilSpread = 0.5;
+                let dir = new Vector(Math.cos(this.angle), Math.sin(this.angle));
+                this.vel = this.vel.sub(dir.mult(this.weapon.kick));
+                let count = this.weapon.count || 1;
+                let gunLen = this.radius + this.weapon.length;
+                let gunTipX = this.pos.x + Math.cos(this.angle) * gunLen;
+                let gunTipY = this.pos.y + Math.sin(this.angle) * gunLen;
+                let speedPenalty = (this.vel.mag() / 20) * 0.2; 
+                for(let i=0; i<count; i++) {
+                    let spreadAngle = (Math.random() - 0.5) * (this.weapon.spread + this.recoilSpread + speedPenalty);
+                    let finalAngle = this.angle + spreadAngle;
+                    let vel = new Vector(Math.cos(finalAngle), Math.sin(finalAngle));
+                    gameState.bullets.push(new Bullet(gunTipX, gunTipY, vel, this.weapon.range, this.weapon.damage, this));
+                }
+            }
+            reload() { if (this.isReloading || this.currentAmmo === this.weapon.ammo) return; this.isReloading = true; this.reloadTimer = this.weapon.reload; }
+            serialize() {
+                return {
+                    id: this.id, x: this.pos.x, y: this.pos.y, a: this.angle,
+                    n: this.name, c: this.color, hp: this.health, mhp: this.maxHealth,
+                    w: this.weaponKey, ar: this.armorKey, dead: this.dead, killer: this.killer,
+                    sc: this.score, perks: this.perks,
+                    rl: this.isReloading, camo: this.hasPerk('camo') && this.vel.mag() < 0.2,
+                    kc: this.knifeCooldown, dc: this.dashCooldown,
+                    inv: this.graceTimer > 0, currentAmmo: this.currentAmmo
+                };
+            }
+        }
+
+        class KnifeProjectile {
+            constructor(x, y, dir, owner) { this.pos = new Vector(x, y); this.dir = dir; this.speed = 0.6; this.owner = owner; this.dead = false; this.rot = 0; }
+            update(dt) {
+                this.pos.x += this.dir.x * this.speed * dt; this.pos.y += this.dir.y * this.speed * dt; this.rot += 0.3;
+                gameState.obstacles.forEach(obs => { if(this.pos.x>obs.x && this.pos.x<obs.x+obs.w && this.pos.y>obs.y && this.pos.y<obs.y+obs.h) this.dead=true; });
+                if(this.pos.x<0||this.pos.x>WORLD_WIDTH||this.pos.y<0||this.pos.y>WORLD_HEIGHT) this.dead=true;
+                if(!this.dead && gameState.mode !== 'client') {
+                    let targets = gameState.entities.concat(gameState.player);
+                    for(let t of targets) {
+                        if(t===this.owner || t.dead) continue;
+                        if(this.pos.sub(t.pos).mag() < t.radius+10) { this.dead=true; t.takeDamage(999, this.owner); }
+                    }
+                }
+            }
+            serialize() { return { x: this.pos.x, y: this.pos.y, r: this.rot }; }
+        }
+
+        class Bullet {
+            constructor(x, y, dir, range, damage, owner) { this.pos = new Vector(x, y); this.dir = dir; this.speed = 1.4; this.range = range; this.damage = damage; this.owner = owner; this.dead = false; this.distTraveled = 0; }
+            update(dt) {
+                let move = this.speed*dt; this.pos.x+=this.dir.x*move; this.pos.y+=this.dir.y*move; this.distTraveled+=move;
+                if(this.distTraveled>=this.range) { this.dead=true; gameState.particles.push(new Particle(this.pos.x, this.pos.y, '#aaa', 2)); }
+                for(let o of gameState.obstacles) { if(this.pos.x>=o.x && this.pos.x<=o.x+o.w && this.pos.y>=o.y && this.pos.y<=o.y+o.h) { this.dead=true; gameState.particles.push(new Particle(this.pos.x, this.pos.y, '#aaa', 3)); return; } }
+                if(gameState.mode !== 'client') {
+                    let targets = gameState.entities.concat(gameState.player);
+                    for(let t of targets) {
+                        if(t===this.owner||t.dead) continue;
+                        if(this.pos.sub(t.pos).mag()<t.radius) { this.dead=true; t.takeDamage(this.damage, this.owner); return; }
+                    }
+                }
+            }
+            serialize() { return { x: this.pos.x, y: this.pos.y }; }
+        }
+
+        class Particle {
+            constructor(x, y, color, size) {
+                this.pos = new Vector(x, y); let angle = Math.random()*Math.PI*2; let speed = Math.random()*0.15;
+                this.vel = new Vector(Math.cos(angle)*speed, Math.sin(angle)*speed); this.life = 1.0; this.color = color; this.size = size;
+            }
+            update(dt) { this.pos = this.pos.add(this.vel.mult(dt)); this.life -= dt/400; }
+            serialize() { return { x: this.pos.x, y: this.pos.y, c: this.color, s: this.size, l: this.life }; }
+        }
+
+        function drawCharacter(ctx, d) {
+            let isCamo = d.camo;
+            if (isCamo) {
+                ctx.save(); ctx.beginPath(); ctx.arc(d.x, d.y, 22, 0, Math.PI*2); ctx.clip();
+                ctx.strokeStyle='#555'; ctx.lineWidth=2; let offX = Math.sin(Date.now()/200)*10;
+                ctx.beginPath(); for(let x=d.x-22; x<d.x+22; x+=10) { ctx.moveTo(x+offX, d.y-22); ctx.lineTo(x+offX, d.y+22); }
+                ctx.stroke(); ctx.restore(); ctx.globalAlpha=0.1;
+            }
+            if (d.inv) {
+                ctx.save(); ctx.translate(d.x, d.y);
+                ctx.globalAlpha = 0.5 + Math.sin(Date.now() / 150) * 0.3;
+                ctx.beginPath(); ctx.arc(0, 0, 30, 0, Math.PI * 2); ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.stroke();
+                ctx.restore(); if (!isCamo) ctx.globalAlpha = 1.0;
+            }
+            ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.a);
+            let w = WEAPONS[d.w];
+            ctx.fillStyle = '#1a1a1a'; ctx.fillRect(13, -w.width/2, w.length, w.width);
+            ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI*2); ctx.fillStyle = d.c; ctx.fill();
+            ctx.beginPath(); ctx.arc(17, 8, 6, 0, Math.PI*2); ctx.arc(17, -8, 6, 0, Math.PI*2); ctx.fillStyle = d.c; ctx.fill();
+            ctx.lineWidth = 4;
+            if (d.ar === 'light') ctx.strokeStyle='#bdc3c7'; else if (d.ar === 'medium') ctx.strokeStyle='#7f8c8d';
+            else if (d.ar === 'heavy') ctx.strokeStyle='#2c3e50'; else ctx.strokeStyle='rgba(0,0,0,0.1)';
+            ctx.stroke();
+            if (d.rl) { ctx.fillStyle='#fff'; ctx.font='bold 10px Arial'; ctx.fillText("R", -3, 3); }
+            ctx.restore(); ctx.globalAlpha=1.0;
+            if (!d.dead && !isCamo) {
+                ctx.save(); ctx.translate(d.x, d.y - 40);
+                ctx.fillStyle = 'white'; ctx.font = 'bold 12px Arial'; ctx.textAlign = 'center'; ctx.fillText(d.n, 0, 0);
+                ctx.fillStyle = '#444'; ctx.fillRect(-20, 5, 40, 5);
+                ctx.fillStyle = d.hp > 50 ? '#2ecc71' : '#e74c3c'; ctx.fillRect(-20, 5, 40 * (d.hp / d.mhp), 5);
+                ctx.restore();
+            }
+        }
+
+        function initMenus() {
+            const createBtns = (obj, containerId, onClick) => {
+                const div = document.getElementById(containerId);
+                if (!div) return; // Skip if container doesn't exist
+                Object.keys(obj).forEach(key => {
+                    let item = obj[key]; let btn = document.createElement('div');
+                    btn.className = 'select-btn'; btn.dataset.key = key; btn.innerHTML = `<div>${item.name}</div>`;
+                    btn.onclick = () => {
+                        div.querySelectorAll('.select-btn').forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active'); onClick(key);
+                    }; div.appendChild(btn);
+                }); 
+                if (div.children.length > 0) div.children[0].classList.add('active');
+            };
+            createBtns(WEAPONS, 'weapon-select', k => selectedWeapon = k);
+            createBtns(ARMOR, 'armor-select', k => selectedArmor = k);
+            createBtns(WEAPONS, 'respawn-weapon-select', k => respawnWeapon = k);
+            createBtns(ARMOR, 'respawn-armor-select', k => respawnArmor = k);
+            document.querySelectorAll('.select-btn[data-key="shotgun"]').forEach(b=>b.classList.add('active'));
+            document.querySelectorAll('.select-btn[data-key="medium"]').forEach(b=>b.classList.add('active'));
+        }
+
+        function initGame(mode, name, weapon, armor, color, hostId = null) {
+            gameState.mode = mode; gameState.entities = []; gameState.bullets = []; gameState.particles = [];
+            gameState.projectiles = []; gameState.obstacles = []; gameState.decorations = []; gameState.score = 0;
+            gameState.cameraLocked = false;
+            
+            if (mode !== 'client') generateMap();
+            let spawn = findSafeSpawn();
+            
+            if (mode === 'single' || mode === 'host') {
+                gameState.player = new Character(name, spawn.x, spawn.y, weapon, armor, color);
+                gameState.playerId = gameState.player.id;
+            }
+            if (mode === 'single') { for(let i=0; i<10; i++) spawnBot(); }
+            if (mode === 'client') setupClient(hostId, name, weapon, armor, color);
+            if (mode !== 'host') startGameSession();
+        }
+        
+        function startGameSession() {
+            gameState.running = true; gameState.lastTime = performance.now();
+            requestAnimationFrame(gameLoop);
+            document.getElementById('start-screen').classList.add('hidden');
+            document.getElementById('death-screen').classList.add('hidden');
+        }
+
+        function setupHostClient(clientData) {
+            let spawn = findSafeSpawn();
+            let p = new Character(clientData.name, spawn.x, spawn.y, clientData.w, clientData.a, clientData.c, false, clientData.id);
+            gameState.entities.push(p); netPlayers[clientData.id] = p;
+            conn.send({ type: 'init', obstacles: gameState.obstacles, decorations: gameState.decorations, playerId: clientData.id });
+            startGameSession();
+        }
+
+        function setupClient(hostId, name, weapon, armor, color) {
+            document.getElementById('connection-status').style.display = 'block';
+            gameState.renderData = { entities: [], bullets: [], particles: [], projectiles: [], obstacles: [], decorations: [] };
+            peer = new Peer();
+            peer.on('open', (id) => {
+                conn = peer.connect(hostId);
+                conn.on('open', () => {
+                    document.getElementById('connection-status').innerText = "Connected!";
+                    gameState.playerId = id; conn.send({ type: 'join', id: id, name: name, w: weapon, a: armor, c: color });
+                });
+                conn.on('data', (data) => {
+                    if (data.type === 'init') {
+                        gameState.obstacles = data.obstacles; gameState.decorations = data.decorations; gameState.playerId = data.playerId;
+                        gameState.renderData.obstacles = data.obstacles; gameState.renderData.decorations = data.decorations;
+                    }
+                    if (data.type === 'update') {
+                        gameState.renderData = data; 
+                        let me = data.entities.find(e => e.id === gameState.playerId);
+                        
+                        // Detect death transition for client
+                        let wasDead = gameState.player ? gameState.player.dead : false;
+                        if (me) {
+                            gameState.player = me; 
+                            gameState.score = me.sc;
+                            
+                            // If player just died, show death screen
+                            if (me.dead && !wasDead) {
+                                // Set default respawn selections to current loadout
+                                respawnWeapon = me.w || 'pistol';
+                                respawnArmor = me.ar || 'none';
+                                
+                                setTimeout(() => {
+                                    document.getElementById('death-screen').classList.remove('hidden');
+                                    // Find who killed us from the data
+                                    let killerName = "Unknown";
+                                    if (me.killer) {
+                                        let killerEntity = data.entities.find(e => e.id === me.killer);
+                                        if (killerEntity) killerName = killerEntity.n || killerEntity.name;
+                                    }
+                                    document.getElementById('killer-name').innerText = killerName;
+                                    document.getElementById('final-score').innerText = Math.floor(me.sc || 0);
+                                    
+                                    // Set active states for respawn selectors
+                                    document.querySelectorAll('#respawn-weapon-select .select-btn').forEach(b => {
+                                        b.classList.remove('active');
+                                        if (b.dataset.key === respawnWeapon) b.classList.add('active');
+                                    });
+                                    document.querySelectorAll('#respawn-armor-select .select-btn').forEach(b => {
+                                        b.classList.remove('active');
+                                        if (b.dataset.key === respawnArmor) b.classList.add('active');
+                                    });
+                                }, 1000);
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        function generateMap() {
+            gameState.obstacles = [];
+            gameState.obstacles.push({x: -50, y: -50, w: WORLD_WIDTH + 100, h: 50}); 
+            gameState.obstacles.push({x: -50, y: WORLD_HEIGHT, w: WORLD_WIDTH + 100, h: 50}); 
+            gameState.obstacles.push({x: -50, y: 0, w: 50, h: WORLD_HEIGHT}); 
+            gameState.obstacles.push({x: WORLD_WIDTH, y: 0, w: 50, h: WORLD_HEIGHT}); 
+            for(let i=0; i<50; i++) {
+                let w = 100 + Math.random() * 150; let h = 100 + Math.random() * 150;
+                let x = Math.floor((Math.random() * (WORLD_WIDTH - w))/50)*50; let y = Math.floor((Math.random() * (WORLD_HEIGHT - h))/50)*50;
+                let overlap = false; for(let o of gameState.obstacles) { if (x < o.x + o.w && x + w > o.x && y < o.y + o.h && y + h > o.y) overlap = true; }
+                if (!overlap) gameState.obstacles.push({x, y, w, h});
+            }
+            gameState.obstacles.push({x: WORLD_WIDTH/2 - 100, y: WORLD_HEIGHT/2 - 100, w: 200, h: 200});
+            for(let i=0; i<100; i++) {
+                let type = Math.random() > 0.5 ? 'crack' : 'patch';
+                gameState.decorations.push({ x: Math.random() * WORLD_WIDTH, y: Math.random() * WORLD_HEIGHT, type: type, rot: Math.random() * Math.PI * 2, size: 10 + Math.random() * 20 });
+            }
+        }
+
+        function findSafeSpawn() {
+            if (gameState.obstacles.length === 0) return {x: 100, y: 100};
+            let safe = false; let x, y;
+            while(!safe) {
+                x = 100 + Math.random() * (WORLD_WIDTH - 200); y = 100 + Math.random() * (WORLD_HEIGHT - 200); safe = true;
+                for(let obs of gameState.obstacles) { if (x > obs.x - 50 && x < obs.x + obs.w + 50 && y > obs.y - 50 && y < obs.y + obs.h + 50) { safe = false; break; } }
+            }
+            return {x, y};
+        }
+
+        function spawnBot() {
+            let names = ["Viper", "Ghost", "Tank", "Zoomer", "Noob", "Pro", "Slayer", "Bot"];
+            let name = names[Math.floor(Math.random()*names.length)];
+            let wKeys = Object.keys(WEAPONS); let aKeys = Object.keys(ARMOR); let colors = ["#e74c3c", "#3498db", "#9b59b6", "#f1c40f", "#2ecc71"];
+            let spawn = findSafeSpawn();
+            let bot = new Character(name, spawn.x, spawn.y, wKeys[Math.floor(Math.random()*wKeys.length)], aKeys[Math.floor(Math.random()*aKeys.length)], colors[Math.floor(Math.random()*colors.length)], true);
+            if (Math.random() > 0.5) bot.perks.push(Object.keys(PERKS_LIST)[Math.floor(Math.random()*5)]);
+            gameState.entities.push(bot);
+        }
+
+        function respawnPlayer() {
+            if (gameState.mode === 'client') {
+                // For clients, send a respawn request to the host with weapon and armor choices
+                if (conn && conn.open) {
+                    conn.send({ type: 'respawn', id: gameState.playerId, weapon: respawnWeapon, armor: respawnArmor });
+                }
+                // Hide death screen immediately for smoother UX
+                document.getElementById('death-screen').classList.add('hidden');
+                gameState.score = 0;
+                gameState.cameraLocked = false;
+                gameState.nextThresholdIndex = 0;
+            } else {
+                // For single player and host
+                let spawn = findSafeSpawn();
+                let oldPlayer = gameState.player;
+                gameState.player = new Character(
+                    oldPlayer.name, 
+                    spawn.x, 
+                    spawn.y, 
+                    respawnWeapon, 
+                    respawnArmor, 
+                    oldPlayer.color, 
+                    false, 
+                    oldPlayer.id
+                );
+                gameState.playerId = gameState.player.id;
+                gameState.cameraLocked = false;
+                gameState.nextThresholdIndex = 0;
+                
+                // Remove old dead player from entities if it exists
+                gameState.entities = gameState.entities.filter(e => e.id !== oldPlayer.id);
+                
+                // Hide death screen and reset score
+                document.getElementById('death-screen').classList.add('hidden');
+                gameState.score = 0;
+            }
+        }
+
+        function gameLoop(time) {
+            if (!gameState.running) return;
+            let dt = time - gameState.lastTime; gameState.lastTime = time; if (dt > 50) dt = 50;
+            if (gameState.mode !== 'client' && !gameState.paused) updateHost(dt);
+            if (gameState.mode === 'client' && !gameState.paused) updateClient(dt);
+            draw(); requestAnimationFrame(gameLoop);
+        }
+
+        function updateHost(dt) {
+            const player = gameState.player;
+            if (!player.dead) {
+                let input = new Vector(0,0);
+                if (gameState.keys.w) input.y = -1; if (gameState.keys.s) input.y = 1;
+                if (gameState.keys.a) input.x = -1; if (gameState.keys.d) input.x = 1;
+                if (input.mag() > 0) input = input.normalize();
+                player.moveInput = input;
+                if (gameState.keys.space) { player.performDash(); gameState.keys.space = false; }
+                if (gameState.keys.e) { player.throwKnife(); gameState.keys.e = false; }
+                if (gameState.keys.r) player.reload();
+                let screenX = player.pos.x - gameState.camera.x; let screenY = player.pos.y - gameState.camera.y;
+                player.angle = Math.atan2(gameState.mouse.y - screenY, gameState.mouse.x - screenX);
+                if (gameState.mouse.down) { if (player.weapon.auto || gameState.mouse.clickFrame) player.shoot(gameState.mouse.x + gameState.camera.x, gameState.mouse.y + gameState.camera.y); }
+                gameState.mouse.clickFrame = false;
+            }
+            player.update(dt);
+            gameState.entities.forEach(ent => {
+                if (ent.dead) return;
+                if (ent.isBot) {
+                    let targets = gameState.entities.concat(player).filter(e => e !== ent && !e.dead);
+                    let closest = null; let minDist = 9999;
+                    targets.forEach(t => {
+                        let d = ent.pos.sub(t.pos).mag();
+                        let range = 900; if(t.hasPerk('camo') && t.vel.mag() < 0.2) range = 100;
+                        if(d<minDist && d<range) { minDist = d; closest = t; }
+                    });
+                    ent.target = closest; if(!ent.target) ent.reactionTimer = 400; 
+                    ent.changeDirTimer -= dt;
+                    if(ent.changeDirTimer <= 0 || !ent.target) {
+                        if(ent.target) {
+                            let ideal = ent.weapon.range * 0.6;
+                            if(minDist < ideal*0.5) ent.moveInput = ent.pos.sub(ent.target.pos).normalize();
+                            else if(minDist > ideal) ent.moveInput = ent.target.pos.sub(ent.pos).normalize();
+                            else {
+                                let perp = new Vector(-(ent.target.pos.y-ent.pos.y), ent.target.pos.x-ent.pos.x).normalize();
+                                if(Math.random()>0.5) perp=perp.mult(-1); ent.moveInput = perp;
+                            }
+                        } else { let a = Math.random()*Math.PI*2; ent.moveInput = new Vector(Math.cos(a), Math.sin(a)); }
+                        ent.changeDirTimer = 500 + Math.random()*1000;
+                    }
+                    if(ent.target) {
+                        let da = Math.atan2(ent.target.pos.y - ent.pos.y, ent.target.pos.x - ent.pos.x);
+                        if(Math.random()<0.05) da += (Math.random()-0.5)*0.2;
+                        let diff = da - ent.angle; while(diff < -Math.PI) diff += Math.PI*2; while(diff > Math.PI) diff -= Math.PI*2;
+                        ent.angle += diff * 0.08; ent.reactionTimer -= dt;
+                        if(Math.abs(diff)<0.3 && ent.reactionTimer<=0) ent.shoot(ent.target.pos.x, ent.target.pos.y);
+                    }
+                }
+                ent.update(dt);
+            });
+            if (gameState.mode === 'single' && gameState.entities.filter(e => e.isBot && !e.dead).length < 8) { if (Math.random() < 0.02) spawnBot(); }
+            for(let i=gameState.bullets.length-1; i>=0; i--) { let b=gameState.bullets[i]; b.update(dt); if(b.dead) gameState.bullets.splice(i,1); }
+            for(let i=gameState.projectiles.length-1; i>=0; i--) { let p=gameState.projectiles[i]; p.update(dt); if(p.dead) gameState.projectiles.splice(i,1); }
+            for(let i=gameState.particles.length-1; i>=0; i--) { let p=gameState.particles[i]; p.update(dt); if(p.life<=0) gameState.particles.splice(i,1); }
+            let mx = (gameState.mouse.x - CANVAS.width/2)*0.4; let my = (gameState.mouse.y - CANVAS.height/2)*0.4;
+            let tx = (player.pos.x + mx) - CANVAS.width/2; let ty = (player.pos.y + my) - CANVAS.height/2;
+            gameState.camera.x += (tx - gameState.camera.x) * 0.1; gameState.camera.y += (ty - gameState.camera.y) * 0.1;
+            checkLevelUp(); updateUI();
+            if (conn && conn.open) {
+                let payload = {
+                    type: 'update',
+                    entities: [player.serialize(), ...gameState.entities.map(e => e.serialize())],
+                    bullets: gameState.bullets.map(b => b.serialize()),
+                    projectiles: gameState.projectiles.map(p => p.serialize()),
+                    particles: gameState.particles.map(p => p.serialize())
+                }; conn.send(payload);
+            }
+        }
+
+        function updateClient(dt) {
+            if (conn && conn.open) {
+                let screenX = gameState.player ? (gameState.player.x - gameState.camera.x) : 0;
+                let screenY = gameState.player ? (gameState.player.y - gameState.camera.y) : 0;
+                let angle = Math.atan2(gameState.mouse.y - screenY, gameState.mouse.x - screenX);
+                conn.send({ type: 'input', id: gameState.playerId, keys: gameState.keys, mouse: gameState.mouse.down, angle: angle, });
+                gameState.keys.space = false; gameState.keys.e = false; gameState.keys.r = false; 
+            }
+            if (gameState.player) {
+                let p = gameState.player;
+                let mx = (gameState.mouse.x - CANVAS.width/2)*0.4; let my = (gameState.mouse.y - CANVAS.height/2)*0.4;
+                let tx = (p.x + mx) - CANVAS.width/2; let ty = (p.y + my) - CANVAS.height/2;
+                
+                // Camera Snap on Spawn (Fix for Invisible Player)
+                if (!gameState.cameraLocked) {
+                    gameState.camera.x = tx;
+                    gameState.camera.y = ty;
+                    gameState.cameraLocked = true;
+                } else {
+                    gameState.camera.x += (tx - gameState.camera.x) * 0.1; 
+                    gameState.camera.y += (ty - gameState.camera.y) * 0.1;
+                }
+            }
+            checkLevelUp(); updateUI();
+        }
+
+        function checkLevelUp() {
+            if (gameState.player && !gameState.player.dead && gameState.nextThresholdIndex < gameState.perkThresholds.length) {
+                let threshold = gameState.perkThresholds[gameState.nextThresholdIndex];
+                if (gameState.score >= threshold) { showLevelUpScreen(); gameState.nextThresholdIndex++; }
+            }
+        }
+
+        function showLevelUpScreen() {
+            const container = document.getElementById('perk-cards-container'); container.innerHTML = '';
+            let currentPerks = gameState.player.perks || [];
+            Object.keys(PERKS_LIST).forEach(key => {
+                if (currentPerks.includes(key)) return;
+                let perk = PERKS_LIST[key]; let card = document.createElement('div'); card.className = 'perk-card';
+                card.innerHTML = `<div class="perk-title">${perk.name}</div><div class="perk-desc">${perk.desc}</div>`;
+                card.onclick = () => {
+                    if(gameState.mode === 'single' || gameState.mode === 'host') { gameState.player.perks.push(key); } else { conn.send({ type: 'input', id: gameState.playerId, keys: {}, perkChoice: key }); }
+                    document.getElementById('level-up-screen').classList.add('hidden');
+                }; container.appendChild(card);
+            });
+            document.getElementById('level-up-screen').classList.remove('hidden');
+        }
+
+        function updateUI() {
+            if (gameState.player) {
+                const p = gameState.player;
+                document.getElementById('score-display').innerText = `Score: ${Math.floor(gameState.score)}`;
+                const am = document.getElementById('ammo-display');
+                if (p.rl) { am.innerText = "RELOADING"; am.style.color = "#e74c3c"; document.getElementById('reload-msg').style.display = 'block'; } 
+                else {
+                    let wInfo = p.w ? WEAPONS[p.w] : (p.weapon || WEAPONS.pistol);
+                    am.innerText = `${p.currentAmmo !== undefined ? p.currentAmmo : '--'} / ${wInfo.ammo}`; am.style.color = "white"; document.getElementById('reload-msg').style.display = 'none';
+                }
+                const hp = document.getElementById('health-fill'); hp.style.width = `${(p.hp / p.mhp) * 100}%`;
+                if (p.perks && p.perks.includes('dash')) {
+                    document.getElementById('dash-bar-container').style.display = 'block';
+                    let pct = 100 - (p.dc / 3000 * 100); document.getElementById('dash-fill').style.width = `${pct}%`;
+                } else { document.getElementById('dash-bar-container').style.display = 'none'; }
+                if (p.perks && p.perks.includes('knife')) {
+                    const ic = document.getElementById('ability-icon'); ic.style.display = 'flex';
+                    ic.style.borderColor = p.kc <= 0 ? 'white' : '#555'; ic.style.color = p.kc <= 0 ? 'white' : '#555';
+                } else { document.getElementById('ability-icon').style.display = 'none'; }
+                let list = gameState.renderData ? gameState.renderData.entities : [...gameState.entities, gameState.player];
+                let sorted = list.filter(e=>!e.dead).sort((a,b) => (b.sc||0) - (a.sc||0));
+                let lb = document.getElementById('leaderboard');
+                lb.innerHTML = sorted.slice(0, 5).map((e, i) => `<div class="lb-entry" style="color:${e.id === gameState.playerId ? '#2ecc71' : 'white'}">${i+1}. ${e.n || e.name} - ${Math.floor(e.sc||e.score||0)}</div>`).join('');
+            }
+        }
+
+        function draw() {
+            CTX.fillStyle = '#2b2b2b'; CTX.fillRect(0, 0, CANVAS.width, CANVAS.height);
+            CTX.save(); CTX.translate(-gameState.camera.x, -gameState.camera.y);
+            CTX.strokeStyle = '#383838'; CTX.lineWidth = 1; CTX.beginPath();
+            let startX = Math.floor(gameState.camera.x / TILE_SIZE) * TILE_SIZE; let startY = Math.floor(gameState.camera.y / TILE_SIZE) * TILE_SIZE;
+            for (let x = startX; x < gameState.camera.x + CANVAS.width + TILE_SIZE; x += TILE_SIZE) { CTX.moveTo(x, gameState.camera.y); CTX.lineTo(x, gameState.camera.y + CANVAS.height); }
+            for (let y = startY; y < gameState.camera.y + CANVAS.height + TILE_SIZE; y += TILE_SIZE) { CTX.moveTo(gameState.camera.x, y); CTX.lineTo(gameState.camera.x + CANVAS.width, y); }
+            CTX.stroke();
+            
+            let decorations = gameState.renderData?.decorations || gameState.decorations || [];
+            decorations.forEach(d => {
+                if(d.x<gameState.camera.x-50||d.x>gameState.camera.x+CANVAS.width+50||d.y<gameState.camera.y-50||d.y>gameState.camera.y+CANVAS.height+50)return;
+                CTX.save(); CTX.translate(d.x, d.y); CTX.rotate(d.rot); CTX.fillStyle='#222';
+                if(d.type==='crack'){CTX.beginPath();CTX.moveTo(-d.size,0);CTX.lineTo(d.size,0);CTX.moveTo(0,-d.size*0.5);CTX.lineTo(0,d.size*0.5);CTX.strokeStyle='#202020';CTX.lineWidth=2;CTX.stroke();}
+                else{CTX.fillRect(-d.size/2,-d.size/2,d.size,d.size);} CTX.restore();
+            });
+            
+            let obstacles = gameState.renderData?.obstacles || gameState.obstacles || [];
+            for (let obs of obstacles) {
+                if(obs.x+obs.w<gameState.camera.x||obs.x>gameState.camera.x+CANVAS.width||obs.y+obs.h<gameState.camera.y||obs.y>gameState.camera.y+CANVAS.height)continue;
+                CTX.fillStyle='#2c3e50';CTX.fillRect(obs.x,obs.y,obs.w,obs.h); CTX.fillStyle='#1a252f';CTX.fillRect(obs.x,obs.y+obs.h-10,obs.w,10);
+                CTX.fillStyle='#34495e';CTX.fillRect(obs.x+5,obs.y+5,obs.w-10,obs.h-15); CTX.strokeStyle='#2c3e50';CTX.lineWidth=2;CTX.beginPath();CTX.moveTo(obs.x+5,obs.y+5);CTX.lineTo(obs.x+obs.w-5,obs.y+obs.h-15);CTX.moveTo(obs.x+obs.w-5,obs.y+5);CTX.lineTo(obs.x+5,obs.y+obs.h-15);CTX.stroke();
+                CTX.strokeStyle='#1a252f';CTX.lineWidth=2;CTX.strokeRect(obs.x,obs.y,obs.w,obs.h);
+            }
+            
+            let entities = gameState.renderData ? gameState.renderData.entities : (gameState.player ? [...(gameState.entities || []), gameState.player] : (gameState.entities || []));
+            let bullets = gameState.renderData ? gameState.renderData.bullets : (gameState.bullets || []);
+            let particles = gameState.renderData ? gameState.renderData.particles : (gameState.particles || []);
+            let projectiles = gameState.renderData ? gameState.renderData.projectiles : (gameState.projectiles || []);
+
+            let drawOrder = entities.sort((a,b) => (a.y||a.pos.y) - (b.y||b.pos.y));
+            drawOrder.forEach(e => {
+                if(e.dead) return;
+                if(e instanceof Character) drawCharacter(CTX, e.serialize()); else drawCharacter(CTX, e);
+            });
+            bullets.forEach(b => {
+                let x = b.x !== undefined ? b.x : b.pos.x; let y = b.y !== undefined ? b.y : b.pos.y;
+                CTX.beginPath(); CTX.arc(x, y, 4, 0, Math.PI*2); CTX.fillStyle='#fff'; CTX.fill();
+            });
+            projectiles.forEach(p => {
+                let x = p.x !== undefined ? p.x : p.pos.x; let y = p.y !== undefined ? p.y : p.pos.y; let r = p.r !== undefined ? p.r : p.rot;
+                CTX.save(); CTX.translate(x, y); CTX.rotate(r); CTX.fillStyle='#bdc3c7'; CTX.beginPath(); CTX.moveTo(10,0); CTX.lineTo(-5,5); CTX.lineTo(-5,-5); CTX.fill(); CTX.restore();
+            });
+            particles.forEach(p => {
+                let x = p.x !== undefined ? p.x : p.pos.x; let y = p.y !== undefined ? p.y : p.pos.y; let l = p.l !== undefined ? p.l : p.life; let c = p.c || p.color; let s = p.s || p.size;
+                CTX.globalAlpha = Math.max(0, l); CTX.fillStyle = c; CTX.beginPath(); CTX.arc(x, y, s*l, 0, Math.PI*2); CTX.fill(); CTX.globalAlpha = 1;
+            });
+            CTX.restore();
+        }
+
+        let selectedWeapon = 'pistol'; let selectedArmor = 'none'; let selectedColor = '#e74c3c';
+        let respawnWeapon = 'pistol'; let respawnArmor = 'none';
+        document.getElementById('btn-single').onclick = () => { initGame('single', document.getElementById('nickname').value, selectedWeapon, selectedArmor, selectedColor); };
+        
+        document.getElementById('btn-host').onclick = () => {
+            document.getElementById('btn-host').style.display = 'none'; document.getElementById('join-section').style.display = 'none'; document.getElementById('btn-single').style.display = 'none'; document.getElementById('host-info').style.display = 'block';
+            peer = new Peer();
+            peer.on('open', (id) => {
+                document.getElementById('host-id-display').innerText = id;
+                navigator.clipboard.writeText(id).catch(err => console.log("Clipboard fail"));
+            });
+            peer.on('connection', (c) => {
+                conn = c; console.log("Client connected");
+                conn.on('data', (data) => {
+                    if (data.type === 'join') {
+                        initGame('host', document.getElementById('nickname').value, selectedWeapon, selectedArmor, selectedColor);
+                        setupHostClient(data);
+                        conn.on('data', (inputData) => {
+                            if (inputData.type === 'input' && netPlayers[inputData.id]) {
+                                let p = netPlayers[inputData.id];
+                                if(inputData.keys.w) p.moveInput.y = -1; else if(inputData.keys.s) p.moveInput.y = 1; else p.moveInput.y = 0;
+                                if(inputData.keys.a) p.moveInput.x = -1; else if(inputData.keys.d) p.moveInput.x = 1; else p.moveInput.x = 0;
+                                if(p.moveInput.mag()>0) p.moveInput=p.moveInput.normalize();
+                                p.angle = inputData.angle; 
+                                p.wantShoot = inputData.mouse;
+                                if(inputData.keys.space) p.wantDash = true; 
+                                if(inputData.keys.e) p.wantKnife = true; 
+                                if(inputData.keys.r) p.wantReload = true;
+                                if(inputData.perkChoice) p.perks.push(inputData.perkChoice);
+                            }
+                            if (inputData.type === 'respawn' && netPlayers[inputData.id]) {
+                                // Respawn the client player
+                                let oldPlayer = netPlayers[inputData.id];
+                                let spawn = findSafeSpawn();
+                                let newPlayer = new Character(
+                                    oldPlayer.name, 
+                                    spawn.x, 
+                                    spawn.y, 
+                                    inputData.weapon || oldPlayer.weaponKey || 'pistol', 
+                                    inputData.armor || oldPlayer.armorKey || 'none', 
+                                    oldPlayer.color, 
+                                    false, 
+                                    inputData.id
+                                );
+                                // Remove old player and add new one
+                                gameState.entities = gameState.entities.filter(e => e.id !== inputData.id);
+                                gameState.entities.push(newPlayer);
+                                netPlayers[inputData.id] = newPlayer;
+                            }
+                        });
+                    }
+                });
+            });
+        };
+
+        document.getElementById('btn-join').onclick = () => {
+            let id = document.getElementById('join-id-input').value; if(!id) return alert("Enter an ID");
+            initGame('client', document.getElementById('nickname').value, selectedWeapon, selectedArmor, selectedColor, id);
+        };
+        
+        document.getElementById('respawn-btn').onclick = () => {
+            respawnPlayer();
+        };
+        
+        window.addEventListener('resize', () => { CANVAS.width = window.innerWidth; CANVAS.height = window.innerHeight; }); window.dispatchEvent(new Event('resize'));
+        window.addEventListener('keydown', e => { if(e.key.toLowerCase()=='w') gameState.keys.w=true; if(e.key.toLowerCase()=='a') gameState.keys.a=true; if(e.key.toLowerCase()=='s') gameState.keys.s=true; if(e.key.toLowerCase()=='d') gameState.keys.d=true; if(e.key.toLowerCase()=='r') gameState.keys.r=true; if(e.key==' ') gameState.keys.space=true; if(e.key.toLowerCase()=='e') gameState.keys.e=true; });
+        window.addEventListener('keyup', e => { if(e.key.toLowerCase()=='w') gameState.keys.w=false; if(e.key.toLowerCase()=='a') gameState.keys.a=false; if(e.key.toLowerCase()=='s') gameState.keys.s=false; if(e.key.toLowerCase()=='d') gameState.keys.d=false; if(e.key.toLowerCase()=='r') gameState.keys.r=false; if(e.key==' ') gameState.keys.space=false; if(e.key.toLowerCase()=='e') gameState.keys.e=false; });
+        window.addEventListener('mousemove', e => { gameState.mouse.x = e.clientX; gameState.mouse.y = e.clientY; });
+        window.addEventListener('mousedown', () => { gameState.mouse.down = true; gameState.mouse.clickFrame = true; });
+        window.addEventListener('mouseup', () => gameState.mouse.down = false);
+        initMenus();
+    </script>
+</body>
+</html>
