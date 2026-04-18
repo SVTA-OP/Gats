@@ -236,7 +236,9 @@
             score: 0,
             renderData: null,
             perkThresholds: [100, 300, 600],
-            nextThresholdIndex: 0
+            nextThresholdIndex: 0,
+            pendingRespawn: null, // <-- ADD THIS
+            pendingPerk: null
         };
  
  
@@ -273,6 +275,7 @@
             }
             die(killer) {
                 this.dead = true;
+                this._deadAt = Date.now(); // <-- ADD THIS LINE
                 this.killer = killer ? killer.id : null;
                 if (killer && !killer.dead) { killer.score += 100; if (killer === gameState.player && isServer) gameState.score = killer.score; }
                 for(let i=0; i<12; i++) gameState.particles.push(new Particle(this.pos.x, this.pos.y, this.color, 10));
@@ -420,8 +423,9 @@
                 return {
                     id: this.id, x: this.pos.x, y: this.pos.y, a: this.angle,
                     n: this.name, c: this.color, hp: this.health, mhp: this.maxHealth,
-                    w: this.weaponKey, ar: this.armorKey, dead: this.dead, killer: this.killer,
-                    sc: this.score, perks: this.perks,
+                    w: this.weaponKey, ar: this.armorKey, dead: this.dead, 
+                    killer: this.killer || null,  // <-- Add "|| null" here
+                    sc: this.score, perks: this.perks || [], // <-- Add "|| []" here
                     rl: this.isReloading, camo: this.hasPerk('camo') && this.vel.mag() < 0.2,
                     kc: this.knifeCooldown, dc: this.dashCooldown,
                     inv: this.graceTimer > 0, currentAmmo: this.currentAmmo
@@ -603,8 +607,9 @@
                 snap.forEach(child => {
                     const inp = child.val();
                     if (!inp || inp.id === myId) return;
-                    if (inp.ts && Date.now() - inp.ts > 500) return; // stale
- 
+                    
+                    // ❌ REMOVE THIS LINE: if (inp.ts && Date.now() - inp.ts > 500) return; // stale
+
                     const p = netPlayers[inp.id];
                     if (!p) return;
  
@@ -658,7 +663,14 @@
                 if (!snap.exists()) return;
                 const data = snap.val();
                 if (!data.entities) return;
-                gameState.renderData = data;
+                
+                // Ensure renderData actually has the entities array!
+                if (!gameState.renderData || !gameState.renderData.entities) {
+                    // Merge the existing map data with the incoming player data
+                    gameState.renderData = { ...gameState.renderData, ...data };
+                } else {
+                    gameState.targetData = data; 
+                }
  
                 const me = data.entities.find(e => e.id === myId);
                 const wasDead = gameState.player ? gameState.player.dead : false;
@@ -680,21 +692,40 @@
                 }
             }, 5000);
  
-            // Push input at 20Hz
+            // Push input at 20Hz safely
+            if (inputFlushInterval) clearInterval(inputFlushInterval);
             inputFlushInterval = setInterval(() => {
                 if (!gameState.running || isServer) return;
+                
                 const p = gameState.player;
-                const screenX = p ? (p.x - gameState.camera.x) : 0;
-                const screenY = p ? (p.y - gameState.camera.y) : 0;
-                const angle   = Math.atan2(gameState.mouse.y - screenY, gameState.mouse.x - screenX);
-                set(fbInput(myId), {
+                if (!p) return;
+                
+                // Calculate the true angle of the mouse relative to the center of the player
+                const screenX = (p.x - gameState.camera.x) + (CANVAS.width / 2);
+                const screenY = (p.y - gameState.camera.y) + (CANVAS.height / 2);
+                const angle = Math.atan2(gameState.mouse.y - screenY, gameState.mouse.x - screenX);
+                
+                let payload = {
                     id: myId,
                     keys:  { w: gameState.keys.w, a: gameState.keys.a, s: gameState.keys.s, d: gameState.keys.d,
                              space: gameState.keys.space, e: gameState.keys.e, r: gameState.keys.r },
                     mouse: gameState.mouse.down,
                     angle: angle,
                     ts:    Date.now()
-                });
+                };
+ 
+                // Inject one-time commands safely
+                if (gameState.pendingRespawn) {
+                    payload.respawn = gameState.pendingRespawn;
+                    gameState.pendingRespawn = null;
+                }
+                if (gameState.pendingPerk) {
+                    payload.perkChoice = gameState.pendingPerk;
+                    gameState.pendingPerk = null;
+                }
+ 
+                set(fbInput(myId), payload);
+                
                 gameState.keys.space = false;
                 gameState.keys.e     = false;
                 gameState.keys.r     = false;
@@ -826,11 +857,8 @@
  
         function respawnPlayer() {
             if (!isServer) {
-                // Send respawn request via input channel
-                set(fbInput(myId), {
-                    id: myId, keys: {}, mouse: false, angle: 0, ts: Date.now(),
-                    respawn: { weapon: respawnWeapon, armor: respawnArmor }
-                });
+                // Queue the respawn for the next input flush
+                gameState.pendingRespawn = { weapon: respawnWeapon, armor: respawnArmor };
                 document.getElementById('death-screen').classList.add('hidden');
                 gameState.score = 0;
                 gameState.cameraLocked = false;
@@ -868,21 +896,31 @@
         function updateServer(dt) {
             const player = gameState.player;
             if (!player) return;
- 
+            
             if (!player.dead) {
                 let input = new Vector(0,0);
-                if (gameState.keys.w) input.y = -1; if (gameState.keys.s) input.y = 1;
-                if (gameState.keys.a) input.x = -1; if (gameState.keys.d) input.x = 1;
+                if (gameState.keys.w) input.y = -1;
+                if (gameState.keys.s) input.y = 1;
+                if (gameState.keys.a) input.x = -1;
+                if (gameState.keys.d) input.x = 1;
                 if (input.mag() > 0) input = input.normalize();
                 player.moveInput = input;
+                
                 if (gameState.keys.space) { player.performDash(); gameState.keys.space = false; }
                 if (gameState.keys.e) { player.throwKnife(); gameState.keys.e = false; }
                 if (gameState.keys.r) player.reload();
-                let screenX = player.pos.x - gameState.camera.x; let screenY = player.pos.y - gameState.camera.y;
+
+                // ONLY calculate mouse angle for the HOST player
+                let screenX = (player.x - gameState.camera.x) + (CANVAS.width / 2);
+                let screenY = (player.y - gameState.camera.y) + (CANVAS.height / 2);
                 player.angle = Math.atan2(gameState.mouse.y - screenY, gameState.mouse.x - screenX);
-                if (gameState.mouse.down) { if (player.weapon.auto || gameState.mouse.clickFrame) player.shoot(); }
+                
+                if (gameState.mouse.down) {
+                    if (player.weapon.auto || gameState.mouse.clickFrame) player.shoot();
+                }
                 gameState.mouse.clickFrame = false;
             }
+            // ... (keep the rest of the function the same)
             player.update(dt);
  
             gameState.entities.forEach(ent => { if (!ent.dead) ent.update(dt); });
@@ -901,20 +939,61 @@
  
             checkLevelUp(); updateUI();
  
-            // Broadcast authoritative state to all clients
-            if (firebaseReady) {
+            
+            // Broadcast authoritative state to all clients (Throttled to 20 FPS)
+            gameState.syncTimer = (gameState.syncTimer || 0) + dt;
+            if (firebaseReady && gameState.syncTimer >= 50) {
                 set(fbState(), {
                     entities:    [player.serialize(), ...gameState.entities.map(e => e.serialize())],
                     bullets:     gameState.bullets.map(b => b.serialize()),
                     projectiles: gameState.projectiles.map(p => p.serialize()),
                     particles:   gameState.particles.map(p => p.serialize())
                 });
+                gameState.syncTimer = 0;
             }
         }
- 
+
         function updateClientView(dt) {
+            // --- BULLETPROOF LERP CODE ---
+            // Only run if renderData, targetData, and both entity arrays actually exist
+            if (gameState.renderData && gameState.targetData && gameState.renderData.entities && gameState.targetData.entities) {
+                
+                // Smoothly glide players to their target coordinates
+                gameState.renderData.entities.forEach(ent => {
+                    let target = gameState.targetData.entities.find(e => e.id === ent.id);
+                    if (target) {
+                        ent.x += (target.x - ent.x) * 0.3; 
+                        ent.y += (target.y - ent.y) * 0.3;
+                        
+                        // Smoothly rotate weapons
+                        let diff = target.a - ent.a;
+                        while (diff < -Math.PI) diff += Math.PI * 2;
+                        while (diff > Math.PI) diff -= Math.PI * 2;
+                        ent.a += diff * 0.3;
+                        
+                        // Instantly copy non-movement stats
+                        ent.hp = target.hp; ent.dead = target.dead; ent.rl = target.rl; 
+                        ent.camo = target.camo; ent.inv = target.inv; ent.currentAmmo = target.currentAmmo;
+                    }
+                });
+                
+                // Add new players or remove disconnected ones
+                let currentIds = gameState.renderData.entities.map(e => e.id);
+                gameState.targetData.entities.forEach(t => { if (!currentIds.includes(t.id)) gameState.renderData.entities.push({...t}); });
+                gameState.renderData.entities = gameState.renderData.entities.filter(ent => gameState.targetData.entities.some(e => e.id === ent.id));
+ 
+                // Bullets and particles move too fast to lerp, just snap them safely
+                gameState.renderData.bullets = gameState.targetData.bullets || [];
+                gameState.renderData.projectiles = gameState.targetData.projectiles || [];
+                gameState.renderData.particles = gameState.targetData.particles || [];
+            }
+ 
             if (gameState.player) {
-                const p = gameState.player;
+                // Tie the camera to our smoothly interpolated player
+                const p = (gameState.renderData && gameState.renderData.entities) 
+                            ? gameState.renderData.entities.find(e => e.id === myId) || gameState.player 
+                            : gameState.player;
+                
                 let mx = (gameState.mouse.x - CANVAS.width/2)*0.4; let my = (gameState.mouse.y - CANVAS.height/2)*0.4;
                 let tx = (p.x + mx) - CANVAS.width/2; let ty = (p.y + my) - CANVAS.height/2;
                 if (!gameState.cameraLocked) {
@@ -942,10 +1021,9 @@
                 let perk = PERKS_LIST[key]; let card = document.createElement('div'); card.className = 'perk-card';
                 card.innerHTML = `<div class="perk-title">${perk.name}</div><div class="perk-desc">${perk.desc}</div>`;
                 card.onclick = () => {
+                    // Queue the perk choice for the next input flush
                     if (isServer) { gameState.player.perks.push(key); } 
-                    else if (firebaseReady) { 
-                        set(fbInput(myId), { id: myId, keys: {}, mouse: false, angle: 0, ts: Date.now(), perkChoice: key });
-                    }
+                    else if (firebaseReady) { gameState.pendingPerk = key; }
                     document.getElementById('level-up-screen').classList.add('hidden');
                 }; container.appendChild(card);
             });
@@ -1005,10 +1083,10 @@
                 CTX.strokeStyle='#1a252f';CTX.lineWidth=2;CTX.strokeRect(obs.x,obs.y,obs.w,obs.h);
             }
             
-            let entities = gameState.renderData ? gameState.renderData.entities : (gameState.player ? [...(gameState.entities || []), gameState.player] : (gameState.entities || []));
-            let bullets = gameState.renderData ? gameState.renderData.bullets : (gameState.bullets || []);
-            let particles = gameState.renderData ? gameState.renderData.particles : (gameState.particles || []);
-            let projectiles = gameState.renderData ? gameState.renderData.projectiles : (gameState.projectiles || []);
+            let entities = (gameState.renderData ? gameState.renderData.entities : (gameState.player ? [...(gameState.entities || []), gameState.player] : (gameState.entities || []))) || [];
+            let bullets = (gameState.renderData ? gameState.renderData.bullets : gameState.bullets) || [];
+            let particles = (gameState.renderData ? gameState.renderData.particles : gameState.particles) || [];
+            let projectiles = (gameState.renderData ? gameState.renderData.projectiles : gameState.projectiles) || [];
  
             let drawOrder = entities.sort((a,b) => (a.y||a.pos.y) - (b.y||b.pos.y));
             drawOrder.forEach(e => {
