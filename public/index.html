@@ -109,10 +109,11 @@
     </div>
  
     <script type="module">
+        // ✅ This tells the browser exactly where to download the code
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-        import { getDatabase, ref, set, get, onValue, off, push, remove, onDisconnect, serverTimestamp }
-            from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
- 
+        import { getDatabase, ref, set, get, onValue, off, push, remove, onDisconnect, serverTimestamp } 
+        from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+        
         // ═══════════════════════════════════════════════════════════════════
         // FIREBASE CONFIGURATION — paste your project config here
         // ═══════════════════════════════════════════════════════════════════
@@ -127,18 +128,41 @@
         };
         // ═══════════════════════════════════════════════════════════════════
  
+
         let db = null;
         let firebaseReady = false;
         try {
-            if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "AIzaSyCjr0dG-YwjdHjBpVMcTB_bzCgFM9qdtqo") {
+            console.log("Checking Firebase config...");
+            
+            if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
+                console.log("Config found! Attempting to initialize Firebase...");
                 const app = initializeApp(FIREBASE_CONFIG);
+                
+                console.log("Attempting to connect to Realtime Database...");
                 db = getDatabase(app);
+                
                 firebaseReady = true;
+                console.log("✅ Firebase initialized successfully!");
             } else {
+                console.warn("⚠️ Firebase API key is missing or set to default.");
                 document.getElementById('firebase-config-warning').style.display = 'block';
             }
+            document.getElementById('btn-play').onclick = () => {
+            console.log("Play button clicked!"); // <-- Add this
+            if (!firebaseReady) { 
+                console.error("Cannot play: Firebase is not ready."); // <-- And this
+                alert("Firebase not configured! Fill in FIREBASE_CONFIG at the top of the script."); 
+                return; 
+            }
+            
+            console.log("Joining public server..."); // <-- And this
+            joinPublicServer(
+                document.getElementById('nickname').value.trim() || 'Player',
+                selectedWeapon, selectedArmor, selectedColor
+            );
+        };
         } catch(e) {
-            console.error("Firebase init failed:", e);
+            console.error("❌ Firebase init completely failed:", e);
             document.getElementById('firebase-config-warning').style.display = 'block';
         }
  
