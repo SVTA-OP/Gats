@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- VERSION: 1.1 - Fixed play button loading issue & added version tracking -->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -75,6 +76,7 @@
     </div>
  
     <div id="start-screen" class="menu-screen">
+        <div id="version-display" style="position: absolute; top: 10px; right: 10px; font-size: 11px; color: #666;"></div>
         <h1>GATS.CLONE</h1>
         <div class="panel">
             <div id="firebase-config-warning" style="display:none">⚠️ Firebase not configured. Edit FIREBASE_CONFIG at the top of the script.</div>
@@ -109,6 +111,13 @@
     </div>
  
     <script type="module">
+        // ═══════════════════════════════════════════════════════════════════
+        // VERSION TRACKING
+        // ═══════════════════════════════════════════════════════════════════
+        const APP_VERSION = "1.1";
+        console.log(`%c🎮 GATS.io Clone v${APP_VERSION}`, "color: #2ecc71; font-weight: bold; font-size: 14px;");
+        document.getElementById('version-display').innerText = `v${APP_VERSION}`;
+
         // ✅ This tells the browser exactly where to download the code
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
         import { getDatabase, ref, set, get, onValue, off, push, remove, onDisconnect, serverTimestamp } 
@@ -132,37 +141,16 @@
         let db = null;
         let firebaseReady = false;
         try {
-            console.log("Checking Firebase config...");
-            
             if (FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.apiKey !== "YOUR_API_KEY") {
-                console.log("Config found! Attempting to initialize Firebase...");
                 const app = initializeApp(FIREBASE_CONFIG);
-                
-                console.log("Attempting to connect to Realtime Database...");
                 db = getDatabase(app);
-                
                 firebaseReady = true;
-                console.log("✅ Firebase initialized successfully!");
+                console.log("✅ Firebase ready");
             } else {
-                console.warn("⚠️ Firebase API key is missing or set to default.");
                 document.getElementById('firebase-config-warning').style.display = 'block';
             }
-            document.getElementById('btn-play').onclick = () => {
-            console.log("Play button clicked!"); // <-- Add this
-            if (!firebaseReady) { 
-                console.error("Cannot play: Firebase is not ready."); // <-- And this
-                alert("Firebase not configured! Fill in FIREBASE_CONFIG at the top of the script."); 
-                return; 
-            }
-            
-            console.log("Joining public server..."); // <-- And this
-            joinPublicServer(
-                document.getElementById('nickname').value.trim() || 'Player',
-                selectedWeapon, selectedArmor, selectedColor
-            );
-        };
         } catch(e) {
-            console.error("❌ Firebase init completely failed:", e);
+            console.error("❌ Firebase init failed:", e);
             document.getElementById('firebase-config-warning').style.display = 'block';
         }
  
@@ -642,36 +630,35 @@
             }, 3000);
         }
  
-        function becomeClient() {
+        async function becomeClient() {
             isServer = false;
             gameState.mode = 'client';
- 
-            // Load map from Firebase
-            get(fbMap()).then(snap => {
-                if (snap.exists()) {
-                    const m = snap.val();
-                    gameState.obstacles   = m.obstacles   || [];
-                    gameState.decorations = m.decorations || [];
-                    if (!gameState.renderData) gameState.renderData = {};
-                    gameState.renderData.obstacles   = gameState.obstacles;
-                    gameState.renderData.decorations = gameState.decorations;
-                }
-            });
- 
-            // Listen for game state broadcast from server
+
+            // Await map load so obstacles exist before anything spawns
+            const mapSnap = await get(fbMap());
+            if (mapSnap.exists()) {
+                const m = mapSnap.val();
+                gameState.obstacles   = m.obstacles   || [];
+                gameState.decorations = m.decorations || [];
+            }
+            gameState.renderData = {
+                entities: [], bullets: [], particles: [], projectiles: [],
+                obstacles: gameState.obstacles, decorations: gameState.decorations
+            };
+
+            // Listen for server state — seed renderData first frame, then lerp via targetData
             onValue(fbState(), snap => {
                 if (!snap.exists()) return;
                 const data = snap.val();
                 if (!data.entities) return;
-                
-                // Ensure renderData actually has the entities array!
-                if (!gameState.renderData || !gameState.renderData.entities) {
-                    // Merge the existing map data with the incoming player data
-                    gameState.renderData = { ...gameState.renderData, ...data };
-                } else {
-                    gameState.targetData = data; 
+                gameState.targetData = data;
+                // First frame: seed renderData with real positions so lerp doesn't start at 0,0
+                if (gameState.renderData.entities.length === 0) {
+                    gameState.renderData.entities    = data.entities.map(e => ({...e}));
+                    gameState.renderData.bullets     = data.bullets     || [];
+                    gameState.renderData.projectiles = data.projectiles || [];
+                    gameState.renderData.particles   = data.particles   || [];
                 }
- 
                 const me = data.entities.find(e => e.id === myId);
                 const wasDead = gameState.player ? gameState.player.dead : false;
                 if (me) {
@@ -680,59 +667,40 @@
                     if (me.dead && !wasDead) showDeathScreen(me, data.entities);
                 }
             });
- 
-            // Watch for server disappearing — if so, try to promote
+
+            // Watch for server going away — promote ourselves if stale
             serverWatchInterval = setInterval(async () => {
                 const snap = await get(fbServer());
                 if (!snap.exists() || Date.now() - (snap.val().heartbeat || 0) > SERVER_TIMEOUT) {
-                    clearInterval(serverWatchInterval);
-                    serverWatchInterval = null;
-                    console.log('Server gone — attempting promotion');
+                    clearInterval(serverWatchInterval); serverWatchInterval = null;
+                    console.log('Server gone — promoting');
                     await promoteToServer();
                 }
             }, 5000);
- 
-            // Push input at 20Hz safely
+
+            // Push input at 20Hz
             if (inputFlushInterval) clearInterval(inputFlushInterval);
             inputFlushInterval = setInterval(() => {
                 if (!gameState.running || isServer) return;
-                
                 const p = gameState.player;
                 if (!p) return;
-                
-                // Calculate the true angle of the mouse relative to the center of the player
                 const screenX = (p.x - gameState.camera.x) + (CANVAS.width / 2);
                 const screenY = (p.y - gameState.camera.y) + (CANVAS.height / 2);
                 const angle = Math.atan2(gameState.mouse.y - screenY, gameState.mouse.x - screenX);
-                
                 let payload = {
                     id: myId,
                     keys:  { w: gameState.keys.w, a: gameState.keys.a, s: gameState.keys.s, d: gameState.keys.d,
                              space: gameState.keys.space, e: gameState.keys.e, r: gameState.keys.r },
-                    mouse: gameState.mouse.down,
-                    angle: angle,
-                    ts:    Date.now()
+                    mouse: gameState.mouse.down, angle, ts: Date.now()
                 };
- 
-                // Inject one-time commands safely
-                if (gameState.pendingRespawn) {
-                    payload.respawn = gameState.pendingRespawn;
-                    gameState.pendingRespawn = null;
-                }
-                if (gameState.pendingPerk) {
-                    payload.perkChoice = gameState.pendingPerk;
-                    gameState.pendingPerk = null;
-                }
- 
+                if (gameState.pendingRespawn) { payload.respawn   = gameState.pendingRespawn; gameState.pendingRespawn = null; }
+                if (gameState.pendingPerk)    { payload.perkChoice = gameState.pendingPerk;   gameState.pendingPerk    = null; }
                 set(fbInput(myId), payload);
-                
-                gameState.keys.space = false;
-                gameState.keys.e     = false;
-                gameState.keys.r     = false;
+                gameState.keys.space = false; gameState.keys.e = false; gameState.keys.r = false;
             }, 50);
         }
- 
-        async function promoteToServer() {
+
+         async function promoteToServer() {
             // Re-claim the server role from within the game
             await set(fbServer(), { owner: myId, heartbeat: Date.now() });
             const confirm = await get(fbServer());
@@ -771,40 +739,50 @@
  
         async function joinPublicServer(name, weapon, armor, color) {
             if (!firebaseReady) { alert("Firebase not configured!"); return; }
- 
+
             myId = 'p_' + Math.random().toString(36).substr(2, 9);
             gameState.playerId = myId;
- 
+            console.log(`📍 Generated player ID: ${myId}`);
+
             document.getElementById('connection-status').style.display = 'block';
             document.getElementById('connection-status').innerText = 'Connecting...';
- 
-            // Register in players list
-            const playerEntry = fbPlayerEntry(myId);
-            await set(playerEntry, { id: myId, name, w: weapon, a: armor, c: color, joined: Date.now() });
-            onDisconnect(playerEntry).remove();
-            onDisconnect(fbInput(myId)).remove();
- 
-            // Try to claim the server role
-            const claimed = await tryClaimServer();
- 
-            if (claimed) {
-                // We are the server — also create our player Character locally
-                const spawn = findSafeSpawn(); // may be empty until map loads, fixed in becomeServer
-                gameState.player = null; // will be set after map loads in becomeServer
-                await becomeServer();
-                // Now map is loaded, spawn ourselves
-                const sp = findSafeSpawn();
-                gameState.player = new Character(name, sp.x, sp.y, weapon, armor, color, false, myId);
-                gameState.playerId = myId;
-            } else {
-                await becomeClient();
-                // Player object will arrive via state updates; prime camera
-                gameState.player = null;
+
+            try {
+                // Register in players list
+                const playerEntry = fbPlayerEntry(myId);
+                await set(playerEntry, { id: myId, name, w: weapon, a: armor, c: color, joined: Date.now() });
+                onDisconnect(playerEntry).remove();
+                onDisconnect(fbInput(myId)).remove();
+                console.log("✅ Player registered in database");
+
+                // Try to claim the server role
+                const claimed = await tryClaimServer();
+                console.log(claimed ? "⚙️ Server claimed" : "👥 Joined as client");
+
+                if (claimed) {
+                    // We are the server — also create our player Character locally
+                    const spawn = findSafeSpawn(); // may be empty until map loads, fixed in becomeServer
+                    gameState.player = null; // will be set after map loads in becomeServer
+                    await becomeServer();
+                    // Now map is loaded, spawn ourselves
+                    const sp = findSafeSpawn();
+                    gameState.player = new Character(name, sp.x, sp.y, weapon, armor, color, false, myId);
+                    gameState.playerId = myId;
+                } else {
+                    await becomeClient();
+                    // Player object will arrive via state updates; prime camera
+                    gameState.player = null;
+                }
+
+                document.getElementById('connection-status').innerText = claimed ? '⚙️ Running as server' : 'Connected!';
+                setTimeout(() => document.getElementById('connection-status').style.display = 'none', 2000);
+                startGameSession();
+                console.log("✅ Game session initialized and started");
+            } catch (error) {
+                console.error("❌ Error in joinPublicServer:", error);
+                document.getElementById('connection-status').innerText = 'Connection failed!';
+                throw error;
             }
- 
-            document.getElementById('connection-status').innerText = claimed ? '⚙️ Running as server' : 'Connected!';
-            setTimeout(() => document.getElementById('connection-status').style.display = 'none', 2000);
-            startGameSession();
         }
  
         function showDeathScreen(me, entities) {
@@ -878,10 +856,13 @@
         }
  
         function startGameSession() {
-            gameState.running = true; gameState.lastTime = performance.now();
-            requestAnimationFrame(gameLoop);
+            console.log("🎮 Starting game session...");
+            gameState.running = true;
+            gameState.lastTime = performance.now();
             document.getElementById('start-screen').classList.add('hidden');
             document.getElementById('death-screen').classList.add('hidden');
+            console.log("✅ UI screens hidden, starting game loop");
+            requestAnimationFrame(gameLoop);
         }
  
         function gameLoop(time) {
@@ -936,7 +917,7 @@
             let mx = (gameState.mouse.x - CANVAS.width/2)*0.4; let my = (gameState.mouse.y - CANVAS.height/2)*0.4;
             let tx = (player.pos.x + mx) - CANVAS.width/2; let ty = (player.pos.y + my) - CANVAS.height/2;
             gameState.camera.x += (tx - gameState.camera.x) * 0.1; gameState.camera.y += (ty - gameState.camera.y) * 0.1;
- 
+
             checkLevelUp(); updateUI();
  
             
@@ -1111,12 +1092,22 @@
         let selectedWeapon = 'pistol'; let selectedArmor = 'none'; let selectedColor = '#e74c3c';
         let respawnWeapon = 'pistol'; let respawnArmor = 'none';
  
-        document.getElementById('btn-play').onclick = () => {
-            if (!firebaseReady) { alert("Firebase not configured! Fill in FIREBASE_CONFIG at the top of the script."); return; }
-            joinPublicServer(
-                document.getElementById('nickname').value.trim() || 'Player',
-                selectedWeapon, selectedArmor, selectedColor
-            );
+        document.getElementById('btn-play').onclick = async () => {
+            console.log("🎮 Play button clicked");
+            if (!firebaseReady) {
+                console.error("❌ Firebase not configured");
+                alert("Firebase not configured! Fill in FIREBASE_CONFIG at the top of the script.");
+                return;
+            }
+            try {
+                const nickname = document.getElementById('nickname').value.trim() || 'Player';
+                console.log(`✅ Joining as: ${nickname} with ${selectedWeapon}/${selectedArmor}`);
+                await joinPublicServer(nickname, selectedWeapon, selectedArmor, selectedColor);
+                console.log("✅ Game session started");
+            } catch (e) {
+                console.error("❌ Game start failed:", e);
+                alert("Failed to start game: " + e.message);
+            }
         };
         
         document.getElementById('respawn-btn').onclick = () => {
