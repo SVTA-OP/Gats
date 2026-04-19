@@ -797,7 +797,15 @@
             if(gameState.keys.r) player.reload();
             let screenX=(player.pos.x-gameState.camera.x)+CANVAS.width/2;
             let screenY=(player.pos.y-gameState.camera.y)+CANVAS.height/2;
-            player.angle=Math.atan2(gameState.mouse.y-screenY, gameState.mouse.x-screenX);
+            const newAngle = Math.atan2(gameState.mouse.y-screenY, gameState.mouse.x-screenX);
+            player.angle = newAngle;
+
+            // Log angle every 30 frames
+            gameState.angleLogCount = (gameState.angleLogCount || 0) + 1;
+            if (gameState.angleLogCount % 30 === 0) {
+                const angleDegrees = (newAngle * 180 / Math.PI).toFixed(1);
+                console.log(`🎯 GUN ANGLE: ${angleDegrees}° | Mouse: (${gameState.mouse.x}, ${gameState.mouse.y}) | Player: (${player.pos.x.toFixed(0)}, ${player.pos.y.toFixed(0)}) | Screen: (${screenX.toFixed(0)}, ${screenY.toFixed(0)})`);
+            }
             if(gameState.mouse.down){if(player.weapon.auto||gameState.mouse.clickFrame) player.shoot();}
             gameState.mouse.clickFrame=false;
         }
@@ -1034,9 +1042,23 @@
         if(e.key===' ') gameState.keys.space=false;
         if(e.key.toLowerCase()==='e') gameState.keys.e=false;
     });
-    window.addEventListener('mousemove', e=>{ gameState.mouse.x=e.clientX; gameState.mouse.y=e.clientY; });
-    window.addEventListener('mousedown', ()=>{ gameState.mouse.down=true; gameState.mouse.clickFrame=true; });
-    window.addEventListener('mouseup',   ()=>{ gameState.mouse.down=false; });
+    window.addEventListener('mousemove', e=>{
+        gameState.mouse.x=e.clientX;
+        gameState.mouse.y=e.clientY;
+        gameState.mouseLogCount = (gameState.mouseLogCount || 0) + 1;
+        if (gameState.mouseLogCount % 60 === 0) {
+            console.log(`🖱️ MOUSE MOVE: (${e.clientX}, ${e.clientY})`);
+        }
+    });
+    window.addEventListener('mousedown', ()=>{
+        gameState.mouse.down=true;
+        gameState.mouse.clickFrame=true;
+        console.log(`🖱️ MOUSE DOWN`);
+    });
+    window.addEventListener('mouseup', ()=>{
+        gameState.mouse.down=false;
+        console.log(`🖱️ MOUSE UP`);
+    });
     document.querySelectorAll('.color-btn').forEach(btn=>{
         btn.onclick=()=>{
             document.querySelectorAll('.color-btn').forEach(b=>b.classList.remove('active'));
