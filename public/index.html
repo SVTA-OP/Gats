@@ -106,6 +106,12 @@
 </div>
 
 <script type="module">
+    // ═══════════════════════════════════════════════════════════════════════════
+    // VERSION TRACKING
+    // ═══════════════════════════════════════════════════════════════════════════
+    const APP_VERSION = "1.5";
+    console.log(`%c🎮 GATS.io Clone v${APP_VERSION}`, "color: #2ecc71; font-weight: bold; font-size: 14px;");
+
     // ─── FIREBASE IMPORTS ────────────────────────────────────────────────────
     import { initializeApp }   from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
     import { getDatabase, ref, set, get, onValue, onDisconnect }
